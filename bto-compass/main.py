@@ -20,9 +20,11 @@ if __name__ == "__main__":
     
     final_state = app_graph.invoke(initial_state)
     
-    print(f"\n--- Applicant Profile ---")
-    print(f"Budget: SGD {initial_state['applicant']['budget']}")
-    print(f"Max Wait: {initial_state['applicant']['max_wait']} years\n")
+    # CHANGE: Print from final_state to see the results of the loop!
+    print(f"\n--- Applicant Profile (After Simulation) ---")
+    print(f"Budget: SGD {final_state['applicant']['budget']}")
+    print(f"Max Wait: {final_state['applicant']['max_wait']} years")
+    print(f"Iterations Run: {final_state['iteration_count']}\n")
     
     print("================ TOP 3 RECOMMENDATIONS ================")
     print(pd.DataFrame(final_state["rankings"]).to_string(index=False))

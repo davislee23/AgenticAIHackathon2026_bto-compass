@@ -14,7 +14,8 @@ groq_client = Groq()
 
 def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
-    return {"iteration_count": state.get("iteration_count", 0) + 1}
+    # Remove iteration incrementing from here so iteration tracking starts clean
+    return {}
 
 def load_projects(state: BTOState):
     print("[Node] load_projects: Loading CSV and application rates JSON...")
@@ -91,19 +92,61 @@ def generate_explanation(state: BTOState):
         temperature=0.2
     )
     return {"explanation": response.choices[0].message.content}
-builder = StateGraph(BTOState)
+    
+def simulate_user_feedback(state: BTOState):
+    """Simulates the user deciding to increase their budget after seeing the first results."""
+    iteration = state.get("iteration_count", 0)
+    
+    if iteration == 0:
+        print("\n--- [SIMULATION] User increased budget to $350,000 ---")
+        # Create an updated copy of the applicant profile
+        new_applicant = dict(state["applicant"])
+        new_applicant["budget"] = 350000
+        
+        # Explicitly return updated applicant and set iteration_count to 1
+        return {
+            "applicant": new_applicant, 
+            "iteration_count": 1
+        }
+        
+    return {"iteration_count": iteration + 1}
 
-builder.add_node("profile_validation", profile_validation)
-builder.add_node("load_projects", load_projects)
-builder.add_node("filter_projects", filter_projects)
-builder.add_node("rank_projects", rank_projects)
-builder.add_node("generate_explanation", generate_explanation)
+def should_replan(state: BTOState):
+    """Router function to determine if we need to loop back."""
+    # Replan when iteration_count is 1 (right after the budget update)
+    if state.get("iteration_count", 0) == 1:
+        return "replan"
+    return "end"
+    
+# Initialize Graph
+workflow = StateGraph(BTOState)
 
-builder.add_edge(START, "profile_validation")
-builder.add_edge("profile_validation", "load_projects")
-builder.add_edge("load_projects", "filter_projects")
-builder.add_edge("filter_projects", "rank_projects")
-builder.add_edge("rank_projects", "generate_explanation")
-builder.add_edge("generate_explanation", END)
+# 1. Add All Nodes
+workflow.add_node("profile_validation", profile_validation)
+workflow.add_node("load_projects", load_projects)
+workflow.add_node("filter_projects", filter_projects)
+workflow.add_node("rank_projects", rank_projects)
+workflow.add_node("generate_explanation", generate_explanation)
+workflow.add_node("simulate_user_feedback", simulate_user_feedback)
 
-app_graph = builder.compile()
+# 2. Set Entry Point and Linear Edges
+workflow.set_entry_point("profile_validation") 
+workflow.add_edge("profile_validation", "load_projects")
+workflow.add_edge("load_projects", "filter_projects")
+workflow.add_edge("filter_projects", "rank_projects")
+workflow.add_edge("rank_projects", "generate_explanation")
+workflow.add_edge("generate_explanation", "simulate_user_feedback")
+
+# 3. Add Conditional Edge for Re-planning
+workflow.add_conditional_edges(
+    "simulate_user_feedback",
+    should_replan,
+    {
+        # On replan, loop back to filter_projects. 
+        # This is efficient because it skips re-loading the CSV files!
+        "replan": "filter_projects", 
+        "end": END
+    }
+)
+
+app_graph = workflow.compile()
