@@ -1,14 +1,14 @@
-import os
 import json
 import pandas as pd
-from dotenv import load_dotenv
 from groq import Groq
 from langgraph.graph import StateGraph, START, END
-from src.state import BTOState
 
-# ==========================================
-# 1. NODE FUNCTIONS
-# ==========================================
+from src.state import BTOState
+from src.engine import score_project
+from src.config import DATA_PATH_CSV, DATA_PATH_JSON, GROQ_MODEL
+
+# Initialize client once to eliminate overhead during graph execution
+groq_client = Groq()
 
 def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
@@ -16,12 +16,9 @@ def profile_validation(state: BTOState):
 
 def load_projects(state: BTOState):
     print("[Node] load_projects: Loading CSV and application rates JSON...")
+    df = pd.read_csv(DATA_PATH_CSV)
     
-    # Load project dataframe
-    df = pd.read_csv("data/bto_flat_offerings_feb2026.csv")
-    
-    # Load application rates JSON and parse into a dictionary lookup
-    with open("data/application_rates/application_rates_feb2026.json", "r") as f:
+    with open(DATA_PATH_JSON, "r") as f:
         data = json.load(f)
         
     rates_dict = {}
@@ -42,7 +39,6 @@ def filter_projects(state: BTOState):
     applicant = state["applicant"]
     df = pd.DataFrame(state["projects"])
     
-    # Hard constraints filtering
     budget_filtered = df[df["price_max_sgd"] <= applicant["budget"]]
     eligible = budget_filtered[(budget_filtered["waiting_time_months"] / 12.0) <= applicant["max_wait"]]
     
@@ -54,47 +50,16 @@ def rank_projects(state: BTOState):
     df = pd.DataFrame(state["eligible_projects"])
     rates = state["application_rates"]
     
-    scores = []
-    for _, row in df.iterrows():
-        proj_name = row["project_name"]
-        rate = rates.get(proj_name, 2.0)
-        
-        # Scoring metrics (0 to 100)
-        afford_s = max(0.0, min(100.0, ((applicant["budget"] - row["price_max_sgd"]) / applicant["budget"]) * 100))
-        loc_s = 100.0 if row["town"] in applicant["preferred_towns"] else 50.0
-        demand_s = max(0.0, min(100.0, 100.0 - (rate * 20.0)))
-        
-        wait_years = row["waiting_time_months"] / 12.0
-        wait_s = max(0.0, (1.0 - (wait_years / applicant["max_wait"])) * 100)
-        lifestyle_s = 80.0  # Static baseline
-        
-        # Weighted formula: 30% affordability + 25% location + 20% demand + 15% wait + 10% lifestyle
-        total_score = (
-            0.30 * afford_s +
-            0.25 * loc_s +
-            0.20 * demand_s +
-            0.15 * wait_s +
-            0.10 * lifestyle_s
-        )
-        
-        scores.append({
-            "Project": proj_name,
-            "Town": row["town"],
-            "Max Price": row["price_max_sgd"],
-            "Wait (Yrs)": round(wait_years, 1),
-            "Demand Rate": rate,
-            "Total Score": round(total_score, 2)
-        })
+    scores = [
+        score_project(row, rates.get(row["project_name"], 2.0), applicant)
+        for _, row in df.iterrows()
+    ]
     
     ranked_df = pd.DataFrame(scores).sort_values(by="Total Score", ascending=False).head(3)
     return {"rankings": ranked_df.to_dict(orient="records")}
 
 def generate_explanation(state: BTOState):
     print("[Node] generate_explanation: Asking Groq to interpret the Top 3...\n")
-    load_dotenv()
-    client = Groq()
-    model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-    
     rankings_str = pd.DataFrame(state["rankings"]).to_string(index=False)
     
     prompt = f"""
@@ -111,26 +76,21 @@ def generate_explanation(state: BTOState):
     4. NEVER recalculate or override the deterministic ranking.
     """
     
-    response = client.chat.completions.create(
-        model=model_name,
+    response = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2
     )
     return {"explanation": response.choices[0].message.content}
 
-# ==========================================
-# 2. COMPILE THE GRAPH
-# ==========================================
 builder = StateGraph(BTOState)
 
-# Add nodes
 builder.add_node("profile_validation", profile_validation)
 builder.add_node("load_projects", load_projects)
 builder.add_node("filter_projects", filter_projects)
 builder.add_node("rank_projects", rank_projects)
 builder.add_node("generate_explanation", generate_explanation)
 
-# Wire the edges together sequentially
 builder.add_edge(START, "profile_validation")
 builder.add_edge("profile_validation", "load_projects")
 builder.add_edge("load_projects", "filter_projects")
@@ -138,5 +98,4 @@ builder.add_edge("filter_projects", "rank_projects")
 builder.add_edge("rank_projects", "generate_explanation")
 builder.add_edge("generate_explanation", END)
 
-# Export the compiled graph app
 app_graph = builder.compile()
