@@ -7,6 +7,8 @@ from src.state import BTOState
 from src.engine import score_project
 from src.config import DATA_PATH_CSV, DATA_PATH_JSON, GROQ_MODEL
 
+from src.rag.rag_retriever import retrieve_policy
+
 # Initialize client once to eliminate overhead during graph execution
 groq_client = Groq()
 
@@ -59,20 +61,27 @@ def rank_projects(state: BTOState):
     return {"rankings": ranked_df.to_dict(orient="records")}
 
 def generate_explanation(state: BTOState):
-    print("[Node] generate_explanation: Asking Groq to interpret the Top 3...\n")
+    applicant = state["applicant"]
     rankings_str = pd.DataFrame(state["rankings"]).to_string(index=False)
+    
+    # Retrieve relevant policy rules for singles
+    query = f"HDB BTO application rules for {applicant.get('applicant_type', 'single')} applicants"
+    policy_context = retrieve_policy(query, top_k=1)
     
     prompt = f"""
     You are an expert Singapore housing advisor.
-    Applicant Constraints: Budget ${state["applicant"]["budget"]}, Max Wait {state["applicant"]["max_wait"]} years.
+    Applicant Constraints: Type: {applicant.get('applicant_type', 'single')}, Budget SGD {applicant['budget']}, Max Wait {applicant['max_wait']} years.
     
     Deterministic Ranked Top 3 BTO Recommendations:
     {rankings_str}
     
+    HDB Policy Reference:
+    {policy_context}
+    
     Instructions:
-    1. Explain why Rank #1 ranks highest.
+    1. Explain why Rank #1 ranks highest for this single applicant.
     2. Describe the trade-offs between the Top 3.
-    3. Flag 1-2 eligibility or financing points the applicant should verify.
+    3. Flag 1-2 eligibility points (e.g., 2-room Flexi restrictions or income ceilings for singles) strictly referencing the policy above.
     4. NEVER recalculate or override the deterministic ranking.
     """
     
@@ -82,7 +91,6 @@ def generate_explanation(state: BTOState):
         temperature=0.2
     )
     return {"explanation": response.choices[0].message.content}
-
 builder = StateGraph(BTOState)
 
 builder.add_node("profile_validation", profile_validation)

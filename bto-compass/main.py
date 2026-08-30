@@ -4,9 +4,11 @@ from src.graph import app_graph
 if __name__ == "__main__":
     initial_state = {
         "applicant": {
-            "budget": 450000,
+            "applicant_type": "single",
+            "age": 35,
+            "budget": 300000,
             "max_wait": 4.0,
-            "preferred_towns": ["Woodlands", "Tampines", "Sengkang"]
+            "preferred_towns": ["Tampines", "Toa Payoh", "Sembawang"]
         },
         "data_changed": False,
         "iteration_count": 0
