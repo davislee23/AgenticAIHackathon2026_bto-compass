@@ -1,15 +1,20 @@
 import json
 import pandas as pd
-from groq import Groq
 from langgraph.graph import StateGraph, END
 
 from src.state import BTOState
 from src.engine import score_project
-from src.config import DATA_PATH_CSV, DATA_PATH_JSON, GROQ_MODEL
+from src.config import DATA_PATH_CSV, DATA_PATH_JSON, get_llm
 from src.rag.rag_retriever import retrieve_policy
+from src.tools.tools import (
+    find_bto_flats, 
+    search_hdb_policies, 
+    calculate_cpf_housing_grant
+)
 
-# Initialize client once
-groq_client = Groq()
+# Initialize LLM & tools
+llm = get_llm()
+tools = [find_bto_flats, search_hdb_policies, calculate_cpf_housing_grant]
 
 def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
@@ -35,68 +40,126 @@ def load_projects(state: BTOState):
         "application_rates": rates_dict
     }
 
+# In src/graph.py
+
 def filter_projects(state: BTOState):
     print("[Node] filter_projects: Applying budget and wait time limits...")
-    applicant = state["applicant"]
-    df = pd.DataFrame(state["projects"])
+    applicant = state.get("applicant") or {}
     
-    budget_filtered = df[df["price_max_sgd"] <= applicant["budget"]]
-    eligible = budget_filtered[(budget_filtered["waiting_time_months"] / 12.0) <= applicant["max_wait"]]
+    # Coerce to numbers with fallbacks
+    budget = applicant.get("budget")
+    if budget is None or budget <= 0:
+        budget = 2000000.0  # Default to open budget if unset
+        
+    max_wait = applicant.get("max_wait")
+    if max_wait is None or max_wait <= 0:
+        max_wait = 10.0      # Default to max wait if unset
+    
+    df = pd.DataFrame(state.get("projects", []))
+    if df.empty:
+        return {"eligible_projects": []}
+    
+    budget_filtered = df[df["price_max_sgd"] <= budget]
+
+    if "waiting_time_months" in budget_filtered.columns:
+        eligible = budget_filtered[(budget_filtered["waiting_time_months"] / 12.0) <= max_wait]
+    else:
+        eligible = budget_filtered
     
     return {"eligible_projects": eligible.to_dict(orient="records")}
 
 def rank_projects(state: BTOState):
     print("[Node] rank_projects: Computing deterministic scores...")
-    applicant = state["applicant"]
-    df = pd.DataFrame(state["eligible_projects"])
-    rates = state["application_rates"]
+    applicant = state.get("applicant") or {}
+    eligible_projects = state.get("eligible_projects", [])
+    
+    if not eligible_projects:
+        return {"rankings": []}
+        
+    df = pd.DataFrame(eligible_projects)
+    rates = state.get("application_rates", {})
     
     scores = [
-        score_project(row, rates.get(row["project_name"], 2.0), applicant)
+        score_project(row, rates.get(row.get("project_name"), 2.0), applicant)
         for _, row in df.iterrows()
     ]
     
     ranked_df = pd.DataFrame(scores).sort_values(by="Total Score", ascending=False).head(3)
     return {"rankings": ranked_df.to_dict(orient="records")}
 
+# src/graph.py
+
+# In src/graph.py
+
 def generate_explanation(state: BTOState):
     print("[Node] generate_explanation: Retrieving context and prompting LLM...")
-    applicant = state["applicant"]
+    applicant = state.get("applicant") or {}
+    rankings = state.get("rankings", [])
+    messages = state.get("messages", [])
     
-    if not state.get("rankings"):
-        return {"explanation": "No projects match your constraints."}
-        
-    rankings_str = pd.DataFrame(state["rankings"]).to_string(index=False)
+    # Robustly extract user query text across different message types
+    user_query = ""
+    if messages:
+        last_msg = messages[-1]
+        if hasattr(last_msg, "content"):
+            user_query = last_msg.content
+        elif isinstance(last_msg, dict):
+            user_query = last_msg.get("content", "")
+        elif isinstance(last_msg, str):
+            user_query = str(last_msg)
+
+    if not user_query:
+        user_query = "Provide recommendations for my BTO application."
+
+    rankings_str = pd.DataFrame(rankings).to_string(index=False) if rankings else "No matching projects found."
     
-    # Retrieve relevant policy rules
-    query = f"HDB BTO application rules for {applicant.get('applicant_type', 'single')} applicants"
-    policy_context = retrieve_policy(query, top_k=1)
+    applicant_type = applicant.get("applicant_type", "single")
+    budget = applicant.get("budget", "N/A")
+    max_wait = applicant.get("max_wait", "N/A")
+    monthly_income = applicant.get("monthly_income", 0.0)
+    
+    # Retrieve policy context tailored directly to user query
+    policy_context = retrieve_policy(user_query, top_k=2)
     
     prompt = f"""
-    You are an expert Singapore housing advisor.
-    Applicant Constraints: Type: {applicant.get('applicant_type', 'single')}, Budget SGD {applicant['budget']}, Max Wait {applicant['max_wait']} years.
-    
-    Deterministic Ranked Top 3 BTO Recommendations:
+    You are an expert Singapore housing advisor specialized in Singapore HDB housing, BTO flats, CPF grants, and eligibility assisting an applicant.
+
+    USER'S QUESTION:
+    "{user_query}"
+
+    APPLICANT PROFILE:
+    - Household Monthly Income: ${monthly_income:,.2f} SGD
+    - Applicant Type: {applicant_type}
+    - Max Budget: SGD {budget}
+    - Max Wait Time: {max_wait} years
+    - First-Timer: {applicant.get('is_first_timer', True)}
+
+    COMPUTED BTO RECOMMENDATIONS:
     {rankings_str}
-    
-    HDB Policy Reference:
+
+    HDB POLICY REFERENCE:
     {policy_context}
-    
-    Instructions:
-    1. Explain why Rank #1 ranks highest for this applicant.
-    2. Describe the trade-offs between the Top 3.
-    3. Flag 1-2 eligibility points strictly referencing the policy above.
-    4. NEVER recalculate or override the deterministic ranking.
+
+    INSTRUCTIONS:
+    1. Direct Answer: Answer the USER'S QUESTION directly in sentence
+    2. STRICT DOMAIN GUARDRAIL: Check if the user's question is related to Singapore housing, HDB/BTO flats, CPF grants, home buying, or applicant eligibility. 
+       - If the query is OUT OF SCOPE (e.g., cooking, programming, general trivia, stock advice, unrelated topics), politely refuse: "I am BTO Compass, a specialized Singapore housing assistant. I can only help with questions related to HDB BTO flats, eligibility rules, housing grants, and project recommendations."
+    3. Contextual Focus: If the user asks about grants, eligibility, or rules, focus primarily on explaining that topic using the HDB Policy Reference.
+    4. Recommendations: If the user asks for flat choices or trade-offs, refer to the Computed BTO Recommendations above.
+    5. Do not output generic static summaries if the user asked a specific question.
     """
     
-    response = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2
-    )
-    return {"explanation": response.choices[0].message.content}
+# 4. Safeguard LLM call against timeout/crash
+    try:
+        response = llm.invoke(prompt)
+        explanation_content = response.content if hasattr(response, "content") else str(response)
+    except Exception as e:
+        print(f"[Error] LLM invocation failed: {e}")
+        explanation_content = f"I encountered an error generating the response ({e}). Please try asking your question again."
+
+    return {"explanation": explanation_content}
     
-# Initialize Production Graph (No simulation loops)
+# Initialize Production Graph
 workflow = StateGraph(BTOState)
 
 workflow.add_node("profile_validation", profile_validation)

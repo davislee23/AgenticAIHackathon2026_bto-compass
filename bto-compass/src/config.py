@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from langchain_core.language_models import BaseChatModel
 
 load_dotenv()
 
@@ -14,3 +15,20 @@ WEIGHTS = {
     "wait": 0.15,
     "lifestyle": 0.10
 }
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")  # "groq" or "bedrock"
+
+def get_llm() -> BaseChatModel:
+    """Returns the LLM based on the configured environment provider."""
+    if LLM_PROVIDER.lower() == "bedrock":
+        from langchain_aws import ChatBedrock
+        return ChatBedrock(
+            model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            model_kwargs={"temperature": 0.2}
+        )
+    else:
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model_name=GROQ_MODEL,  # Uses the variable
+            temperature=0.2
+        )
