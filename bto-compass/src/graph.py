@@ -4,7 +4,7 @@ from pathlib import Path
 from langgraph.graph import StateGraph, END
 
 from src.state import BTOState
-from src.engine import score_project
+from src.engine import score_project, calculate_ehg_grant
 from src.config import DATA_PATH_CSV, DATA_PATH_JSON, get_llm
 from src.rag.rag_retriever import retrieve_policy
 from src.tools.tools import (
@@ -68,23 +68,40 @@ def load_projects(state: BTOState):
 # In src/graph.py
 
 def filter_projects(state: BTOState):
-    print("[Node] filter_projects: Applying budget and wait time limits...")
+    print("[Node] filter_projects: Applying budget, grant, and wait time limits...")
     applicant = state.get("applicant") or {}
     
-    # Coerce to numbers with fallbacks
+    income = float(applicant.get("monthly_income", 0.0))
+    applicant_type = str(applicant.get("applicant_type", "Couple")).strip().title()
+    is_single = (applicant_type == "Single")
+    
+    # Calculate EHG Grant to determine true effective purchasing power
+    grant = calculate_ehg_grant(income, is_single=is_single)
+    
     budget = applicant.get("budget")
     if budget is None or budget <= 0:
-        budget = 2000000.0  # Default to open budget if unset
+        budget = 2000000.0
+    else:
+        budget = float(budget)
         
+    effective_budget = budget + grant
+    
     max_wait = applicant.get("max_wait")
     if max_wait is None or max_wait <= 0:
-        max_wait = 10.0      # Default to max wait if unset
+        max_wait = 10.0
+    else:
+        max_wait = float(max_wait)
     
     df = pd.DataFrame(state.get("projects", []))
     if df.empty:
         return {"eligible_projects": []}
     
-    budget_filtered = df[df["price_max_sgd"] <= budget]
+    # Check minimum price against total purchasing power (budget + grant)
+    price_col = "price_min_sgd" if "price_min_sgd" in df.columns else "price_max_sgd"
+    if price_col in df.columns:
+        budget_filtered = df[df[price_col] <= effective_budget]
+    else:
+        budget_filtered = df
 
     if "waiting_time_months" in budget_filtered.columns:
         eligible = budget_filtered[(budget_filtered["waiting_time_months"] / 12.0) <= max_wait]
@@ -104,11 +121,18 @@ def rank_projects(state: BTOState):
     df = pd.DataFrame(eligible_projects)
     rates = state.get("application_rates", {})
     
-    scores = [
-        score_project(row, rates.get(row.get("project_name"), 2.0), applicant)
-        for _, row in df.iterrows()
-    ]
+    # Score projects and strip out None results (ineligible projects)
+    scores = []
+    for _, row in df.iterrows():
+        project_name = row.get("project_name", "Unknown")
+        rate = rates.get(project_name, 1.0)
+        res = score_project(row, rate, applicant)
+        if res is not None:
+            scores.append(res)
     
+    if not scores:
+        return {"rankings": []}
+
     ranked_df = pd.DataFrame(scores).sort_values(by="Total Score", ascending=False).head(3)
     return {"rankings": ranked_df.to_dict(orient="records")}
 
