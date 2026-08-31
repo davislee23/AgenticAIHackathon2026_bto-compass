@@ -5,4 +5,5 @@ langgraph
 pandas
 pypdf
 pydantic
+python-dotenv
 groq
