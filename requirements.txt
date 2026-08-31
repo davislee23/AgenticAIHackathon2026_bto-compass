@@ -7,3 +7,5 @@ pypdf
 pydantic
 python-dotenv
 groq
+scikit-learn
+EOF
