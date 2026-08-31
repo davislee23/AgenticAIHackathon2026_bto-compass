@@ -20,7 +20,7 @@ def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
     return {}
 
-ddef load_projects(state: BTOState):
+def load_projects(state: BTOState):
     print("[Node] load_projects: Loading dataset...")
     
     csv_path = Path(DATA_PATH_CSV)
