@@ -1,22 +1,23 @@
-# HDB Income Ceilings & Ownership Restrictions
+# HDB Eligibility & Income Ceilings (BTO vs. Resale)
 
-## Monthly Household Income Ceilings for BTO Flats
-To purchase a new BTO flat directly from HDB, the total gross monthly household income must not exceed the specified ceiling at the time of HFE application.
+## 1. Income Ceilings [BTO ONLY]
+To purchase a NEW Build-To-Order (BTO) flat directly from HDB, gross monthly household income CANNOT exceed:
+* **Families & Couples (3-Room and Larger):** $14,000 / month
+* **Extended / Multi-Gen Families:** $21,000 / month
+* **Singles (Aged 35+) buying 2-Room Flexi:** $7,000 / month
 
-* **Families & Couples (3-Room and Larger Flats):** **$14,000** per month.
-* **Extended / Multi-Generational Families:** **$21,000** per month.
-* **Single Citizens Aged 35+ (2-Room Flexi Flats):** **$7,000** per month.
-* **Families Buying 2-Room Flexi BTO Flats:** **$7,000** per month.
-
----
-
-## Single Citizen Scheme Eligibility
-* **Minimum Age Requirement:** Must be at least **35 years old** at the time of application (unless applying under the Joint Singles Scheme or Orphan Scheme).
-* **Flat Types Allowed (BTO):** Eligible to purchase **2-Room Flexi BTO flats only** across all classifications (Standard, Plus, and Prime).
-* **Flat Types Allowed (Resale):** Can purchase resale flats of any size (up to 5-room / Executive) under Standard or Plus classifications, but restricted to 2-Room resale flats under Prime classification.
+*If household income exceeds these limits, applicants are DISQUALIFIED from buying a BTO flat.*
 
 ---
 
-## Citizenship Requirements
-* **Family Nucleus (Couples):** At least **one applicant must be a Singapore Citizen (SC)** and at least **one co-applicant must be an SC or Singapore Permanent Resident (SPR)**.
-* **Single Applicants:** Must be a **Singapore Citizen (SC)**.
+## 2. Income Ceilings [RESALE ONLY]
+* **Buying on Open Market:** NO household income ceiling for purchasing standard/plus resale flats using private bank loans.
+* **HDB Housing Loan for Resale:** $14,000 / month (Families) or $7,000 / month (Singles).
+* **CPF Housing Grants for Resale:** $14,000 / month (Families) or $7,000 / month (Singles).
+* **Prime Location Resale Flats:** Subject to a $14,000 / month income ceiling (Families) or $7,000 / month (Singles).
+
+---
+
+## 3. Options for Single Citizen Applicants (Aged 35+) [BOTH]
+* **BTO Route:** Restricted strictly to **2-Room Flexi flats** across Standard, Plus, and Prime projects.
+* **Resale Route:** Can buy **2-Room, 3-Room, 4-Room, 5-Room, or Executive resale flats** (Standard and Plus). Restricted to 2-Room Flexi only for Prime resale flats.
