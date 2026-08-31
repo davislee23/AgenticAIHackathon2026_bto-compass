@@ -1,5 +1,13 @@
 # app.py
 import streamlit as st
+import sys
+
+from pathlib import Path
+# Add the directory containing app.py to Python's import search path
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+    
 from langchain_core.messages import HumanMessage
 from src.graph import app_graph
 from src.cost_tracker import UsageTracker
