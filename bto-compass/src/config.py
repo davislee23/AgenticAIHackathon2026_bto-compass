@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import streamlit as st
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import BaseChatModel, ChatGroq
 
 load_dotenv()
 
@@ -42,5 +42,5 @@ def get_llm() -> BaseChatModel:
         from langchain_groq import ChatGroq
         return ChatGroq(
             model_name=GROQ_MODEL,  # Uses the variable
-            temperature=0.2
+            temperature=0.0
         )
