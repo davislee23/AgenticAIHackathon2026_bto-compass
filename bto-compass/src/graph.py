@@ -20,23 +20,47 @@ def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
     return {}
 
-def load_projects(state: BTOState):
-    print("[Node] load_projects: Loading CSV and application rates JSON...")
-    df = pd.read_csv(DATA_PATH_CSV)
+ddef load_projects(state: BTOState):
+    print("[Node] load_projects: Loading dataset...")
     
-    with open(DATA_PATH_JSON, "r") as f:
-        data = json.load(f)
-        
+    csv_path = Path(DATA_PATH_CSV)
+    json_path = Path(DATA_PATH_JSON)
+
+    # Fallback to parent directory if data subfolder is placed in repo root
+    if not csv_path.exists():
+        alt_csv = Path(__file__).resolve().parent.parent.parent / "data" / "bto_projects.csv"
+        if alt_csv.exists():
+            csv_path = alt_csv
+
+    if not json_path.exists():
+        alt_json = Path(__file__).resolve().parent.parent.parent / "data" / "application_rates.json"
+        if alt_json.exists():
+            json_path = alt_json
+
+    # Load CSV
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        print(f"[Error] Failed reading CSV at {csv_path}: {e}")
+        df = pd.DataFrame()
+
+    # Load JSON rates
     rates_dict = {}
-    for row in data:
-        projects_str = row.get("projects_in_group")
-        rate = row.get("application_rate")
-        if projects_str and pd.notna(rate):
-            for name in str(projects_str).split(";"):
-                rates_dict[name.strip()] = float(rate)
-                
+    if json_path.exists():
+        try:
+            with open(json_path, "r") as f:
+                json_data = json.load(f)
+            for row in json_data:
+                projects_str = row.get("projects_in_group")
+                rate = row.get("application_rate")
+                if projects_str and pd.notna(rate):
+                    for name in str(projects_str).split(";"):
+                        rates_dict[name.strip()] = float(rate)
+        except Exception as e:
+            print(f"[Warning] Could not load application rates JSON: {e}")
+
     return {
-        "projects": df.to_dict(orient="records"), 
+        "projects": df.to_dict(orient="records"),
         "application_rates": rates_dict
     }
 
