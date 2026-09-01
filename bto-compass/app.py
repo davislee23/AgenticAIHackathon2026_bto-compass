@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 from src.graph import app_graph
 from src.cost_tracker import UsageTracker
 from src.extractors import extract_income_from_pdf
+from src.rag.rates_reader import get_application_rates_context
 
 st.set_page_config(page_title="BTO Compass", layout="wide")
 st.title("🏡 BTO Compass AI Assistant")
@@ -130,7 +131,6 @@ if prompt := st.chat_input("Ask about BTO eligibility, housing grants, or flat r
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # Explicit fallbacks for every field
         applicant_data = {
             "monthly_income": float(st.session_state.get("monthly_income") or 0.0),
             "is_first_timer": bool(st.session_state.get("is_first_timer", True)),
@@ -140,10 +140,14 @@ if prompt := st.chat_input("Ask about BTO eligibility, housing grants, or flat r
             "applicant_type": str(st.session_state.get("applicant_type") or "couple")
         }
 
+        # Load latest scraped application rates
+        rates_context = get_application_rates_context()
+
         with st.spinner("Analyzing housing options..."):
             response = app_graph.invoke({
                 "messages": [HumanMessage(content=prompt)],
-                "applicant": applicant_data
+                "applicant": applicant_data,
+                "rates_context": rates_context  # <--- Pass scraped context to LangGraph
             })
 
         # Extract output cleanly
@@ -158,7 +162,16 @@ if prompt := st.chat_input("Ask about BTO eligibility, housing grants, or flat r
         st.markdown(assistant_output)
         st.session_state.messages.append({"role": "assistant", "content": assistant_output})
 
-        # Token cost tracking (if response metadata exists)
+        # View Retrieved RAG Context Inspector
+        with st.expander("🔍 View Retrieved RAG Context"):
+            # Show either policy context or raw rates data used
+            context = response.get("policy_context", rates_context) if isinstance(response, dict) else rates_context
+            if context:
+                st.code(context, language="markdown")
+            else:
+                st.warning("No application rates context available.")
+                
+# Token cost tracking (if response metadata exists)
         if isinstance(response, dict) and "messages" in response and response["messages"]:
             last_msg = response["messages"][-1]
             if hasattr(last_msg, "response_metadata") and "usage" in last_msg.response_metadata:

@@ -8,6 +8,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH_CSV = BASE_DIR / "data" / "bto_flat_offerings_feb2026.csv"
+DATA_PATH_JSON = BASE_DIR / "data" / "application_rates.json"
 DATA_PATH_JSON = BASE_DIR / "data" / "application_rates_feb2026.json"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
