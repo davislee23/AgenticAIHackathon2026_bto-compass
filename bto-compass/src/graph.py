@@ -8,15 +8,12 @@ from src.state import BTOState
 from src.engine import score_project, calculate_ehg_grant
 from src.config import DATA_PATH_CSV, DATA_PATH_JSON, get_llm
 from src.rag.rag_retriever import retrieve_policy
-from src.tools.tools import (
-    find_bto_flats, 
-    search_hdb_policies, 
-    calculate_cpf_housing_grant
-)
+from src.rag.rates_reader import get_application_rates_context
+from src.tools.tools import search_hdb_policies
 
 # Initialize LLM & tools
 llm = get_llm()
-tools = [find_bto_flats, search_hdb_policies, calculate_cpf_housing_grant]
+tools = [search_hdb_policies]
 
 def extract_raw_text(json_data: Any) -> str:
     """Recursively extracts scraped text from various scraper JSON formats."""
@@ -37,65 +34,12 @@ def profile_validation(state: BTOState):
     print("[Node] profile_validation: Checking applicant constraints...")
     return {}
 
-def load_projects(state: BTOState):
-    print("[Node] load_projects: Loading dataset and application rates...")
+def load_projects(state: BTOState) -> BTOState:
+    # ... loading CSV ...
     
-    # Directly target bto-compass/data/application_rates.json from project root
-    base_dir = Path(__file__).resolve().parent.parent
-    json_path = base_dir / "data" / "application_rates.json"
-    
-    # Fallback to config path if root file doesn't exist
-    if not json_path.exists() and Path(DATA_PATH_JSON).exists():
-        json_path = Path(DATA_PATH_JSON)
-
-    csv_path = base_dir / "data" / "bto_projects.csv"
-    if not csv_path.exists() and Path(DATA_PATH_CSV).exists():
-        csv_path = Path(DATA_PATH_CSV)
-
-    # 1. Load CSV
-    try:
-        df = pd.read_csv(csv_path) if csv_path.exists() else pd.DataFrame()
-        print(f"[Debug] Loaded CSV from {csv_path}")
-    except Exception as e:
-        print(f"[Error] Failed reading CSV at {csv_path}: {e}")
-        df = pd.DataFrame()
-
-    # 2. Load JSON rates and raw content
-    rates_dict = {}
-    raw_web_content = ""
-
-    if json_path.exists():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                json_data = json.load(f)
-
-            raw_web_content = extract_raw_text(json_data)
-
-            if isinstance(json_data, dict):
-                for key, val in json_data.items():
-                    if isinstance(val, (int, float)):
-                        rates_dict[key] = float(val)
-            elif isinstance(json_data, list):
-                for row in json_data:
-                    projects_str = row.get("projects_in_group")
-                    rate = row.get("application_rate")
-                    if projects_str and pd.notna(rate):
-                        for name in str(projects_str).split(";"):
-                            rates_dict[name.strip()] = float(rate)
-
-            print(f"[Debug] Successfully loaded JSON from {json_path}")
-            print(f"[Debug] Extracted raw text length: {len(raw_web_content)} characters")
-
-        except Exception as e:
-            print(f"[Warning] Could not load application rates JSON: {e}")
-    else:
-        print(f"[Warning] JSON file not found at {json_path}")
-
-    return {
-        "projects": df.to_dict(orient="records"),
-        "application_rates": rates_dict,
-        "rates_raw_text": raw_web_content
-    }
+    # Reusable single-source call:
+    state["application_rates_context"] = get_application_rates_context()
+    return state
 
 def filter_projects(state: BTOState):
     print("[Node] filter_projects: Applying budget, grant, and wait time limits...")
@@ -211,10 +155,18 @@ def generate_explanation(state: BTOState):
         scraped_rates_context = "No application rate data was loaded."
 
     policy_context = retrieve_policy(user_query, top_k=2)
-    
+    rates_context = state.get("application_rates_context", "No live rate data.")
+    SYSTEM_PROMPT = """You are BTO Compass AI, a strict housing advisor.
+
+STRICT GROUNDING RULES:
+1. Base your response ONLY on the provided "BTO Project Data", "Live Application Rates", and "Policy RAG Context".
+2. If specific application rates or numbers are not explicitly stated in the context, state "Data unavailable in live feed" — NEVER invent, extrapolate, or estimate application rates or prices.
+3. Do not use outside knowledge or assumptions about HDB prices or queue positions.
+"""
     prompt = f"""
     You are an expert Singapore housing advisor specialized in Singapore HDB housing, BTO flats, CPF grants, and applicant eligibility.
 
+    {SYSTEM_PROMPT}
     USER'S QUESTION:
     "{user_query}"
 
@@ -230,6 +182,7 @@ def generate_explanation(state: BTOState):
 
     LATEST HDB BTO APPLICATION RATES & WEBPAGE DATA:
     {scraped_rates_context}
+    {rates_context}
 
     HDB POLICY REFERENCE:
     {policy_context}

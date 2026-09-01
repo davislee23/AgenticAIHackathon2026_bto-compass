@@ -10,4 +10,8 @@ class BTOState(TypedDict, total=False):
     application_rates: Dict[str, float]
     rates_raw_text: Optional[str]
     explanation: Optional[str]
+    application_rates_context: str 
+    rag_context: str
     policy_context: Optional[str]
+    user_profile: Dict[str, Any]
+    ranked_projects: List[Dict[str, Any]]
