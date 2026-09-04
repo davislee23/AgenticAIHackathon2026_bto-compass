@@ -13,6 +13,7 @@ from src.graph import app_graph
 from src.cost_tracker import UsageTracker
 from src.extractors import extract_income_from_pdf
 from src.rag.rates_reader import get_application_rates_context
+from src.llm import get_active_provider_info
 
 st.set_page_config(page_title="BTO Compass", layout="wide")
 st.title("🏡 BTO Compass AI Assistant")
@@ -50,6 +51,14 @@ if "applicant_type" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+provider_info = get_active_provider_info()
+
+with st.sidebar:
+    st.subheader("LLM Backend Status")
+    st.caption(f"{provider_info['icon']} **Provider:** {provider_info['provider']}")
+    st.caption(f"🤖 **Model:** `{provider_info['model']}`")
+    st.divider()
+    
 # Sidebar Controls & Document Uploader
 with st.sidebar:
     st.header("📄 Payslip Auto-Fill")

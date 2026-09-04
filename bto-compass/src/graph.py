@@ -35,9 +35,23 @@ def profile_validation(state: BTOState):
     return {}
 
 def load_projects(state: BTOState) -> BTOState:
-    # ... loading CSV ...
+    print("[Node] load_projects: Loading BTO project data and rate context...")
     
-    # Reusable single-source call:
+    # 1. Load CSV Project Data
+    projects = []
+    if Path(DATA_PATH_CSV).exists():
+        df = pd.read_csv(DATA_PATH_CSV)
+        projects = df.to_dict(orient="records")
+    
+    # 2. Load JSON Application Rates
+    rates = {}
+    if Path(DATA_PATH_JSON).exists():
+        with open(DATA_PATH_JSON, "r", encoding="utf-8") as f:
+            rates = json.load(f)
+            
+    # 3. Update State
+    state["projects"] = projects
+    state["application_rates"] = rates
     state["application_rates_context"] = get_application_rates_context()
     return state
 
